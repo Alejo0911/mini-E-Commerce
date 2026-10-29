@@ -7,8 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import com.alejomunoz.backend.infrastructure.persistence.entity.OrderEntity;
-
-import io.lettuce.core.dynamic.annotation.Param;
+import org.springframework.data.repository.query.Param;
 
 public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
 

@@ -1,5 +1,6 @@
 package com.alejomunoz.backend.infrastructure.persistence.entity;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 import jakarta.persistence.CascadeType;
@@ -31,6 +32,9 @@ public class ProductEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(nullable = false)
+    private BigDecimal price;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
