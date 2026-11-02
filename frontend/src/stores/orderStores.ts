@@ -1,15 +1,15 @@
 import { defineStore } from "pinia";
-import { computed } from 'vue'; 
-import { ref as vueRef } from 'vue';
+import { ref, computed } from 'vue'; 
 import type { CreateOrderRequest, Order } from "../types/Order";
 import { orderService } from "../services/orderService";
+import { getFriendlyErrorMessage } from "../utils/errorHandler";
 
 export const useOrderStore = defineStore('order', () => {
 
     // State
-    const currentOrder = vueRef<Order | null>(null);
-    const loading = vueRef<boolean>(false);
-    const error = vueRef<string | null>(null);
+    const currentOrder = ref<Order | null>(null);
+    const loading = ref<boolean>(false);
+    const error = ref<string | null>(null);
 
     // Getters / Computed
     const isOrderPending = computed(() => currentOrder.value?.status === 'PENDING_PAYMENT');
@@ -24,8 +24,8 @@ export const useOrderStore = defineStore('order', () => {
             const order = await orderService.createOrder(request);
             currentOrder.value = order;
             return order;
-        } catch(err: any) {
-            error.value = err.response?.data?.message || 'Error al crear la orden con reserva temporal.';
+        } catch(err: unknown) {
+            error.value = getFriendlyErrorMessage(err);
             throw err;
         } finally {
             loading.value = false;
@@ -42,8 +42,8 @@ export const useOrderStore = defineStore('order', () => {
             const updatedOrder = await orderService.payOrder(orderId);
             currentOrder.value = updatedOrder;
             return updatedOrder;
-        } catch (err: any) {
-            error.value = err.response?.data?.message || 'Error al procesar el pago de la orden.';
+        } catch (err: unknown) {
+            error.value = getFriendlyErrorMessage(err);
             throw err;
         } finally {
             loading.value = false;

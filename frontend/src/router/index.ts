@@ -1,13 +1,29 @@
 import { createRouter, createWebHistory} from "vue-router";
 import CheckoutView from "../views/CheckoutView.vue";
+import ProductCatalog from "../views/ProductCatalog.vue";
+import { useOrderStore } from "../stores/orderStores";
 
 const router = createRouter({
     history: createWebHistory(),
     routes: [
         {
-            path: "/chekout",
+            path: "/checkout",
             name: "checkout",
-            component: CheckoutView
+            component: CheckoutView,
+            beforeEnter: (to, from, next) => {
+                const orderStore = useOrderStore();
+
+                if(!orderStore.currentOrder) {
+                    next({ name: 'catalog' });
+                } else {
+                    next();
+                }
+            }
+        },
+        {
+            path: "/",
+            name: "catalog",
+            component: ProductCatalog
         }
     ]
 });
