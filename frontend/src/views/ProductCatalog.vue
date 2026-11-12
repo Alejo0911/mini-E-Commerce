@@ -1,67 +1,67 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import type { Product } from '../types/Product';
-import { useOrderStore } from '../stores/orderStores';
+import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import api from '../services/api';
-import { onMounted } from 'vue';
+import type { Product } from '../types/Product';
+import { useProductStore } from '../stores/productStore';
+import { useOrderStore } from '../stores/orderStores';
+import { getFriendlyErrorMessage } from '../utils/errorHandler';
 
 const router = useRouter();
+const productStore = useProductStore();
 const orderStore = useOrderStore();
 
-const loading = ref<boolean>(false);
-const error = ref<string | null>(null);
-const products = ref<Product[]>([]);
+const localError = ref<string | null>(null);
 const quantities = ref<Record<number, number>>({});
 
-// Obtener productos y su inventario desde el backend
-const fetchProducts = async () => {
-    loading.value = true;
-    error.value = null;
-
+// Cargar catálogo de productos a través de productStore
+const loadProducts = async (): Promise<void> => {
+    localError.value = null;
     try {
-        const response = await api.get<Product[]>('/products');
-        products.value = response.data;
-
-        products.value.forEach((p: Product) => {
-            quantities.value[p.id] = 1;
+        const data = await productStore.fetchProducts();
+        data.forEach((p: Product) => {
+            if (!(p.id in quantities.value)) {
+                quantities.value[p.id] = 1;
+            }
         });
-    } catch(err: any) {
-        console.error(err);
-        error.value = 'No se pudo cargar el catálogo. Inténtate más tarde.';
-        loading.value = false;
+    } catch (err: unknown) {
+        localError.value = getFriendlyErrorMessage(err);
     }
 };
 
-// Crear orden y activar la reserva temporal (TTL)
-const handleCreateOrder = async (productId: number) => {
+// Crear orden y activar la reserva temporal con TTL
+const handleCreateOrder = async (productId: number): Promise<void> => {
+    localError.value = null;
     const quantity = quantities.value[productId] || 1;
 
     try {
         await orderStore.createOrder({
-            userId: 1,
-            items: [
-                { productId, quantity }
-            ]
+            userId: 1, // ID de usuario por defecto
+            items: [{ productId, quantity }]
         });
-        router.push('/checkout');
-    } catch (err) {
-    console.error('Error al crear la orden con reserva de stock', err);
+        await router.push({ name: 'checkout' });
+    } catch (err: unknown) {
+        localError.value = getFriendlyErrorMessage(err);
     }
 };
 
 onMounted(() => {
-    fetchProducts();
-})
+    loadProducts();
+});
 </script>
 
 <template>
     <div class="catalog-container">
-        <h2>Catálogo de Productos y Stock</h2>
-        <div v-if="loading" class="loading">Cargando catálogo...</div>
-        <div v-if="error" class="error-msg">{{ error }}</div>
-        <div class="products-grid" v-if="!loading">
-            <div v-for="product in products" :key="product.id" class="product-card">
+        <header class="catalog-header">
+            <h2>Catálogo de Productos con Reserva Temporal (TTL)</h2>
+            <p class="subtitle">Selecciona un producto para iniciar el proceso de checkout y reservar stock en tiempo real.</p>
+        </header>
+
+        <div v-if="productStore.loading" class="loading">Cargando catálogo desde el servidor...</div>
+        <div v-if="localError" class="error-msg">{{ localError }}</div>
+        <div v-if="orderStore.error" class="error-msg">{{ orderStore.error }}</div>
+
+        <div class="products-grid" v-if="!productStore.loading">
+            <div v-for="product in productStore.products" :key="product.id" class="product-card">
                 <div class="product-info">
                     <h3>{{ product.name }}</h3>
                     <p class="description">{{ product.description || 'Sin descripción' }}</p>
@@ -71,47 +71,61 @@ onMounted(() => {
                         <strong :class="{ 'out-of-stock': (product.inventory?.stockAvailable ?? 0) === 0 }">
                             {{ product.inventory?.stockAvailable ?? 0 }} Unidades
                         </strong>
+                        <span v-if="(product.inventory?.stockReserved ?? 0) > 0" class="reserved-info">
+                            ({{ product.inventory?.stockReserved }} reservadas)
+                        </span>
                     </div>
                 </div>
+
                 <div class="product-actions" v-if="product.inventory && product.inventory.stockAvailable > 0">
                     <div class="quantity-selector">
-                        <label for="qty">Cant:</label>
-                        <input 
-                        id="qty"
-                        type="number" 
-                        v-model.number="quantities[product.id]" 
-                        min="1" 
-                        :max="product.inventory.stockAvailable"
-                        class="qty-input"
-                        /> 
+                        <label :for="'qty-' + product.id">Cant:</label>
+                        <input
+                            :id="'qty-' + product.id"
+                            type="number"
+                            v-model.number="quantities[product.id]"
+                            min="1"
+                            :max="product.inventory.stockAvailable"
+                            class="qty-input"
+                        />
                     </div>
                     <button
-                    @click="handleCreateOrder(product.id)"
-                    :disabled="orderStore.loading"
-                    class="btn-order"
+                        @click="handleCreateOrder(product.id)"
+                        :disabled="orderStore.loading"
+                        class="btn-order"
                     >
-                    {{ orderStore.loading? 'Reservando...' : 'Comprar y Reservar' }}    
+                        {{ orderStore.loading ? 'Reservando...' : 'Comprar y Reservar' }}
                     </button>
                 </div>
                 <div v-else class="sold-out-badge">Agotado Temporalmente</div>
             </div>
         </div>
-        <p v-if="orderStore.error" class="error-msg">{{ orderStore.error }}</p>
     </div>
 </template>
 
 <style scoped>
 .catalog-container {
-    max-width: 900px;
+    max-width: 960px;
     margin: 2rem auto;
     padding: 2rem;
     font-family: Arial, sans-serif;
 }
+.catalog-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.catalog-header h2 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+.subtitle {
+    color: #7f8c8d;
+    font-size: 0.95rem;
+}
 .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.5rem;
-    margin-top: 1.5rem;
 }
 .product-card {
     background: white;
@@ -121,17 +135,23 @@ onMounted(() => {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.product-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 .product-info h3 {
     margin: 0 0 0.5rem 0;
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     color: #2c3e50;
 }
 .description {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: #7f8c8d;
     margin-bottom: 1rem;
+    min-height: 2.5rem;
 }
 .price {
     font-size: 1.3rem;
@@ -143,6 +163,11 @@ onMounted(() => {
     font-size: 0.85rem;
     color: #34495e;
     margin-bottom: 1rem;
+}
+.reserved-info {
+    font-size: 0.75rem;
+    color: #e67e22;
+    margin-left: 0.3rem;
 }
 .out-of-stock {
     color: #c0392b;
@@ -160,8 +185,8 @@ onMounted(() => {
     font-size: 0.85rem;
 }
 .qty-input {
-    width: 50px;
-    padding: 0.3rem;
+    width: 55px;
+    padding: 0.35rem;
     border: 1px solid #ccc;
     border-radius: 4px;
     text-align: center;
@@ -171,11 +196,12 @@ onMounted(() => {
     background: #3498db;
     color: white;
     border: none;
-    padding: 0.5rem;
+    padding: 0.55rem;
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    transition: background 0.2s;
 }
 .btn-order:hover { background: #2980b9; }
 .btn-order:disabled { background: #bdc3c7; cursor: not-allowed; }
@@ -191,8 +217,14 @@ onMounted(() => {
 }
 .loading, .error-msg {
     text-align: center;
-    margin: 2rem 0;
+    margin: 1.5rem 0;
     font-weight: bold;
 }
-.error-msg { color: #c0392b; }
+.error-msg {
+    color: #c0392b;
+    background: #fde8e8;
+    padding: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #f8b4b4;
+}
 </style>

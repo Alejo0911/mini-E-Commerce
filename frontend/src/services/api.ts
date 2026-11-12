@@ -1,14 +1,14 @@
-import axios from 'axios';
+import axios, { type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 
-const api = axios.create({
-    baseURL: 'http://localhost:8080/api',
+const api: AxiosInstance = axios.create({
+    baseURL: import.meta.env.VITE_API_URL,
     headers: {
         'Content-Type': 'application/json',
     },
 });
 
 api.interceptors.request.use(
-    (config) => {
+    (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
         const token = localStorage.getItem('accessToken');
         if(token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -16,13 +16,12 @@ api.interceptors.request.use(
 
         return config;
     },
-    (error) => Promise.reject(error)
+    (error: unknown) => Promise.reject(error)
 );
 
 api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        console.error('API Error:', error.response?.data || error.message);
+    (response: AxiosResponse): AxiosResponse => response,
+    (error: unknown) => {
         return Promise.reject(error);
     }
 );

@@ -12,11 +12,21 @@ export const useOrderStore = defineStore('order', () => {
     const error = ref<string | null>(null);
 
     // Getters / Computed
-    const isOrderPending = computed(() => currentOrder.value?.status === 'PENDING_PAYMENT');
-    const orderExpiresAt = computed(() => currentOrder.value?.expiresAt || null);
+    const isOrderPending = computed<boolean>(() => currentOrder.value?.status === 'PENDING_PAYMENT');
+    const isOrderPaid = computed<boolean>(() => currentOrder.value?.status =="PAID");
+    const isOrderExpired = computed<boolean>(() => {
+        if (!currentOrder.value) return false;
+        if (currentOrder.value.status === "EXPIRED") return true;
+        if (currentOrder.value.status === "PENDING_PAYMENT") {
+            return new Date(currentOrder.value.expiresAt).getTime() <= Date.now();
+        }
+        return false;
+    });
+    const orderExpiresAt = computed<string | null>(() => currentOrder.value?.expiresAt ?? null);
+
 
     // Actions
-    async function createOrder(request: CreateOrderRequest) {
+    async function createOrder(request: CreateOrderRequest): Promise<Order> {
         loading.value = true;
         error.value = null;
 
@@ -25,7 +35,8 @@ export const useOrderStore = defineStore('order', () => {
             currentOrder.value = order;
             return order;
         } catch(err: unknown) {
-            error.value = getFriendlyErrorMessage(err);
+            const message = getFriendlyErrorMessage(err);
+            error.value = message;
             throw err;
         } finally {
             loading.value = false;
@@ -34,7 +45,7 @@ export const useOrderStore = defineStore('order', () => {
         
     }
 
-    async function payOrder(orderId: number) {
+    async function payOrder(orderId: number): Promise<Order> {
         loading.value = true;
         error.value = null;
 
@@ -43,14 +54,55 @@ export const useOrderStore = defineStore('order', () => {
             currentOrder.value = updatedOrder;
             return updatedOrder;
         } catch (err: unknown) {
-            error.value = getFriendlyErrorMessage(err);
+            const message = getFriendlyErrorMessage(err);
+            error.value = message;
             throw err;
         } finally {
             loading.value = false;
         } 
     }
 
-    function clearCurrentOrder() {
+    async function cancelOrder(orderId: number): Promise<Order> {
+        loading.value = true;
+        error.value = null;
+
+        try {
+            const cancelledOrder = await orderService.cancelOrder(orderId);
+            currentOrder.value = cancelledOrder;
+            return cancelledOrder;
+        } catch (err: unknown) {
+            const message = getFriendlyErrorMessage(err);
+            error.value = message;
+            throw err;
+        } finally {
+            loading.value = false;
+        }
+    }
+
+    async function fetchOrder(orderId: number): Promise<Order> {
+        loading.value = true;
+        error.value = null;
+
+        try {
+            const order = await orderService.getOrderById(orderId);
+            currentOrder.value = order;
+            return order;
+        } catch (err: unknown) {
+            const message = getFriendlyErrorMessage(err);
+            error.value = message;
+            throw err;
+        } finally {
+            loading.value = false;
+        }
+    }
+
+    function markAsExpired(): void {
+        if (currentOrder.value && currentOrder.value.status === "PENDING_PAYMENT") {
+            currentOrder.value.status = "EXPIRED";
+        }
+    }
+
+    function clearCurrentOrder(): void {
         currentOrder.value = null;
         error.value = null;
     }
@@ -60,9 +112,14 @@ export const useOrderStore = defineStore('order', () => {
         loading,
         error,
         isOrderPending,
+        isOrderPaid,
+        isOrderExpired,
         orderExpiresAt,
         createOrder,
         payOrder,
+        cancelOrder,
+        fetchOrder,
+        markAsExpired,
         clearCurrentOrder
     };
 });

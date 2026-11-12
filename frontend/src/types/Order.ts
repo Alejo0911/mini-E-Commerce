@@ -15,12 +15,15 @@ export interface OrderItem {
     product: Product;
     quantity: number;
     priceAtOrder: number;
+    unitPrice?: number;
 }
+
+export type OrderStatus = 'PENDING_PAYMENT' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
 export interface Order {
     id: number;
     userId: number;
-    status: 'PENDING_PAYMENT' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+    status: OrderStatus;
     totalAmount: number;
     expiresAt: string;
     createdAt: string;

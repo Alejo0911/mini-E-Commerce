@@ -14,6 +14,6 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     @Query("SELECT o FROM OrderEntity o WHERE o.status = :status AND o.expiresAt <= :now")
     List<OrderEntity> findByStatusAndExpiresAtBefore(
         @Param("status") String status,
-        @Param("expiresAt") OffsetDateTime now
+        @Param("now") OffsetDateTime now
     );
 }

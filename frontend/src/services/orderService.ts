@@ -10,5 +10,15 @@ export const orderService = {
     async payOrder(orderId: number): Promise<Order> {
         const response = await api.patch<Order>(`/orders/${orderId}/pay`);
         return response.data;
+    },
+
+    async cancelOrder(orderId: number): Promise<Order> {
+        const response = await api.patch<Order>(`/orders/${orderId}/cancel`);
+        return response.data;
+    },
+
+    async getOrderById(orderId: number): Promise<Order> {
+        const response = await api.get<Order>(`/orders/${orderId}`);
+        return response.data;
     }
 }
