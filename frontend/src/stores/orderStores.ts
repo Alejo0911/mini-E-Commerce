@@ -68,12 +68,28 @@ export const useOrderStore = defineStore('order', () => {
 
         try {
             const cancelledOrder = await orderService.cancelOrder(orderId);
-            currentOrder.value = cancelledOrder;
+            currentOrder.value = null;
             return cancelledOrder;
         } catch (err: unknown) {
             const message = getFriendlyErrorMessage(err);
             error.value = message;
             throw err;
+        } finally {
+            loading.value = false;
+        }
+    }
+
+    async function checkActivePendingOrder(userId: number = 1): Promise<Order | null> {
+        loading.value = true;
+        error.value = null;
+
+        try {
+            const activeOrder = await orderService.getActivePendingOrder(userId);
+            currentOrder.value = activeOrder;
+            return activeOrder;
+        } catch (err: unknown) {
+            currentOrder.value = null;
+            return null;
         } finally {
             loading.value = false;
         }
@@ -119,6 +135,7 @@ export const useOrderStore = defineStore('order', () => {
         payOrder,
         cancelOrder,
         fetchOrder,
+        checkActivePendingOrder,
         markAsExpired,
         clearCurrentOrder
     };

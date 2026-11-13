@@ -36,6 +36,9 @@ public class ProductEntity {
     @Column(nullable = false)
     private BigDecimal price;
 
+    @Column(name = "image_url", length = 255)
+    private String imageUrl;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 

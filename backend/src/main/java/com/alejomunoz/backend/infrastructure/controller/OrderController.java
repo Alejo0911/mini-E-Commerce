@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.alejomunoz.backend.application.dto.CreateOrderRequestDTO;
@@ -36,8 +37,22 @@ public class OrderController {
         return ResponseEntity.ok(paidOrder);
     }
 
+    @GetMapping("/pending")
+    public ResponseEntity<OrderResponseDTO> getActivePendingOrder(
+            @RequestParam(name = "userId", required = false, defaultValue = "1") Long userId) {
+        return orderService.getActivePendingOrderByUserId(userId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<OrderResponseDTO> cancelOrderPost(@PathVariable Long id) {
+        OrderResponseDTO cancelledOrder = orderService.cancelOrder(id);
+        return ResponseEntity.ok(cancelledOrder);
+    }
+
     @PatchMapping("/{id}/cancel")
-    public ResponseEntity<OrderResponseDTO> cancelOrder(@PathVariable Long id) {
+    public ResponseEntity<OrderResponseDTO> cancelOrderPatch(@PathVariable Long id) {
         OrderResponseDTO cancelledOrder = orderService.cancelOrder(id);
         return ResponseEntity.ok(cancelledOrder);
     }

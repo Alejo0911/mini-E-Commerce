@@ -36,6 +36,7 @@ public class DtoMapper {
         .name(product.getName())
         .description(product.getDescription())
         .price(product.getPrice())
+        .imageUrl(product.getImageUrl())
         .createdAt(product.getCreatedAt())
         .inventory(toInventoryDTO(product.getInventory()))
         .build();
