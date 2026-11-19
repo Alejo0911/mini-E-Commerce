@@ -1,68 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useOrderStore } from '../stores/orderStores';
 import { useProductStore } from '../stores/productStore';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
+import ReservationTimer from '../components/ReservationTimer.vue';
 
 const router = useRouter();
 const orderStore = useOrderStore();
 const productStore = useProductStore();
 
-const remainingSeconds = ref<number>(0);
 const localError = ref<string | null>(null);
-let timerInterval: number | null = null;
 
-const calculateRemainingTime = (): void => {
-    if (!orderStore.currentOrder || orderStore.currentOrder.status !== 'PENDING_PAYMENT') return;
-
-    const expiresAtTime = new Date(orderStore.currentOrder.expiresAt).getTime();
-    const now = Date.now();
-    const diff = Math.floor((expiresAtTime - now) / 1000);
-
-    if (diff <= 0) {
-        remainingSeconds.value = 0;
-        if (timerInterval !== null) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
-        orderStore.markAsExpired();
-    } else {
-        remainingSeconds.value = diff;
-    }
+const handleTimerExpired = (): void => {
+    orderStore.markAsExpired();
 };
-
-const formattedTime = computed<string>(() => {
-    const minutes = Math.floor(remainingSeconds.value / 60);
-    const seconds = remainingSeconds.value % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-});
-
-const isExpired = computed<boolean>(() => {
-    return remainingSeconds.value <= 0 && orderStore.currentOrder?.status === 'PENDING_PAYMENT';
-});
-
-watch(
-    () => orderStore.currentOrder,
-    (newOrder) => {
-        if (timerInterval !== null) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
-        if (newOrder && newOrder.status === 'PENDING_PAYMENT') {
-            calculateRemainingTime();
-            timerInterval = window.setInterval(calculateRemainingTime, 1000);
-        }
-    },
-    { immediate: true }
-);
-
-onUnmounted(() => {
-    if (timerInterval !== null) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-    }
-});
 
 const handlePay = async (): Promise<void> => {
     if (!orderStore.currentOrder) return;
@@ -70,10 +22,6 @@ const handlePay = async (): Promise<void> => {
 
     try {
         await orderStore.payOrder(orderStore.currentOrder.id);
-        if (timerInterval !== null) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
         // Refrescar inventario en el catálogo
         await productStore.fetchProducts();
     } catch (err: unknown) {
@@ -87,10 +35,6 @@ const handleCancel = async (): Promise<void> => {
 
     try {
         await orderStore.cancelOrder(orderStore.currentOrder.id);
-        if (timerInterval !== null) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
         await productStore.fetchProducts();
     } catch (err: unknown) {
         localError.value = getFriendlyErrorMessage(err);
@@ -116,15 +60,11 @@ const handleBackToCatalog = (): void => {
                     </span>
                 </div>
 
-                <div v-if="orderStore.isOrderPending" class="timer-section">
-                    <p class="timer-label">Tiempo restante para completar el pago:</p>
-                    <div class="timer-clock" :class="{ urgent: remainingSeconds < 60 }">
-                        {{ formattedTime }}
-                    </div>
-                    <p class="timer-warning">
-                        El stock está reservado temporalmente. Si el tiempo expira, la reserva se revertirá de forma atómica.
-                    </p>
-                </div>
+                <ReservationTimer
+                    v-if="orderStore.isOrderPending && orderStore.currentOrder"
+                    :expires-at="orderStore.currentOrder.expiresAt"
+                    @expired="handleTimerExpired"
+                />
 
                 <div class="items-list">
                     <h3>Productos reservados:</h3>
@@ -141,10 +81,10 @@ const handleBackToCatalog = (): void => {
                     <span>${{ Number(orderStore.currentOrder.totalAmount).toFixed(2) }}</span>
                 </div>
 
-                <div v-if="orderStore.isOrderPending && !isExpired" class="actions-group">
+                <div v-if="orderStore.isOrderPending && !orderStore.isOrderExpired" class="actions-group">
                     <button
                         @click="handlePay"
-                        :disabled="orderStore.loading || isExpired"
+                        :disabled="orderStore.loading || orderStore.isOrderExpired"
                         class="btn-pay"
                     >
                         {{ orderStore.loading ? 'Procesando Pago...' : 'Confirmar y Pagar Ahora' }}
@@ -165,7 +105,7 @@ const handleBackToCatalog = (): void => {
                     </div>
                 </div>
 
-                <div v-else-if="orderStore.currentOrder.status === 'EXPIRED' || isExpired" class="expired-message">
+                <div v-else-if="orderStore.currentOrder.status === 'EXPIRED' || orderStore.isOrderExpired" class="expired-message">
                     La reserva ha expirado. El stock ha sido devuelto automáticamente al inventario.
                     <div class="mt-3">
                         <button @click="handleBackToCatalog" class="btn-primary">Volver al Catálogo</button>
@@ -233,35 +173,6 @@ const handleBackToCatalog = (): void => {
 .status-badge.expired { background: #c0392b; }
 .status-badge.cancelled { background: #7f8c8d; }
 
-.timer-section {
-    background: #fff3cd;
-    border: 1px solid #ffeeba;
-    padding: 1.2rem;
-    border-radius: 6px;
-    text-align: center;
-    margin: 1.2rem 0;
-}
-.timer-label {
-    margin: 0;
-    font-size: 0.9rem;
-    color: #856404;
-}
-.timer-clock {
-    font-size: 2.2rem;
-    font-weight: bold;
-    color: #d35400;
-    margin: 0.4rem 0;
-    font-family: 'Courier New', Courier, monospace;
-}
-.timer-clock.urgent {
-    color: #c0392b;
-    animation: pulse 1s infinite;
-}
-.timer-warning {
-    font-size: 0.8rem;
-    color: #856404;
-    margin: 0;
-}
 .items-list {
     margin: 1.5rem 0;
 }
@@ -372,11 +283,5 @@ const handleBackToCatalog = (): void => {
 }
 .mt-3 {
     margin-top: 1rem;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.4; }
-    100% { opacity: 1; }
 }
 </style>
