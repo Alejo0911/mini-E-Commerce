@@ -11,7 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<ProductEntity, Long>{
     
-    @Query("SELECT p FROM ProductEntity p LEFT JOIN FETCH p.inventory")
+    @Query("SELECT p FROM ProductEntity p LEFT JOIN FETCH p.inventory ORDER BY p.id ASC")
     List<ProductEntity> findAllWithInventory();
 
     @Query("SELECT p FROM ProductEntity p LEFT JOIN FETCH p.inventory WHERE p.id = :id")

@@ -17,6 +17,7 @@ public class ProductResponseDTO {
     private String name;
     private String description;
     private BigDecimal price;
+    private String imageUrl;
     private OffsetDateTime createdAt;
     private InventoryResponseDTO inventory;
 }

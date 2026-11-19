@@ -5,6 +5,8 @@ import type { Product } from '../types/Product';
 import { useProductStore } from '../stores/productStore';
 import { useOrderStore } from '../stores/orderStores';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
+import PendingOrderBanner from '../components/PendingOrderBanner.vue';
+import ProductCard from '../components/ProductCard.vue';
 
 const router = useRouter();
 const productStore = useProductStore();
@@ -19,8 +21,11 @@ const loadProducts = async (): Promise<void> => {
     try {
         const data = await productStore.fetchProducts();
         data.forEach((p: Product) => {
-            if (!(p.id in quantities.value)) {
+            const max = p.inventory?.stockAvailable ?? 0;
+            if (!(p.id in quantities.value) || quantities.value[p.id] < 1) {
                 quantities.value[p.id] = 1;
+            } else if (max > 0 && quantities.value[p.id] > max) {
+                quantities.value[p.id] = max;
             }
         });
     } catch (err: unknown) {
@@ -28,7 +33,7 @@ const loadProducts = async (): Promise<void> => {
     }
 };
 
-// Crear orden y activar la reserva temporal con TTL
+// Crear orden y activar la reserva temporal con TTL (o redirigir a orden pendiente existente)
 const handleCreateOrder = async (productId: number): Promise<void> => {
     localError.value = null;
     const quantity = quantities.value[productId] || 1;
@@ -38,14 +43,37 @@ const handleCreateOrder = async (productId: number): Promise<void> => {
             userId: 1, // ID de usuario por defecto
             items: [{ productId, quantity }]
         });
+        // Refrescar inventario fresco del servidor tras la reserva
+        await productStore.fetchProducts();
         await router.push({ name: 'checkout' });
+    } catch (err: unknown) {
+        localError.value = getFriendlyErrorMessage(err);
+        await productStore.fetchProducts();
+    }
+};
+
+// Acciones para gestionar la orden activa pendiente desde el aviso superior
+const handleContinuePayment = (): void => {
+    router.push({ name: 'checkout' });
+};
+
+const handleCancelPendingOrder = async (): Promise<void> => {
+    if (!orderStore.currentOrder) return;
+    localError.value = null;
+    try {
+        await orderStore.cancelOrder(orderStore.currentOrder.id);
+        // Refrescar inmediatamente el catálogo para mostrar el stock restituido
+        await loadProducts();
     } catch (err: unknown) {
         localError.value = getFriendlyErrorMessage(err);
     }
 };
 
-onMounted(() => {
-    loadProducts();
+onMounted(async () => {
+    await Promise.all([
+        loadProducts(),
+        orderStore.checkActivePendingOrder(1)
+    ]);
 });
 </script>
 
@@ -56,49 +84,30 @@ onMounted(() => {
             <p class="subtitle">Selecciona un producto para iniciar el proceso de checkout y reservar stock en tiempo real.</p>
         </header>
 
+        <!-- Aviso superior de orden activa pendiente de pago -->
+        <PendingOrderBanner
+            v-if="orderStore.currentOrder && orderStore.isOrderPending && !orderStore.isOrderExpired"
+            :order-id="orderStore.currentOrder.id"
+            :total-amount="Number(orderStore.currentOrder.totalAmount)"
+            :loading="orderStore.loading"
+            @continue="handleContinuePayment"
+            @cancel="handleCancelPendingOrder"
+        />
+
         <div v-if="productStore.loading" class="loading">Cargando catálogo desde el servidor...</div>
         <div v-if="localError" class="error-msg">{{ localError }}</div>
         <div v-if="orderStore.error" class="error-msg">{{ orderStore.error }}</div>
 
         <div class="products-grid" v-if="!productStore.loading">
-            <div v-for="product in productStore.products" :key="product.id" class="product-card">
-                <div class="product-info">
-                    <h3>{{ product.name }}</h3>
-                    <p class="description">{{ product.description || 'Sin descripción' }}</p>
-                    <p class="price">${{ product.price.toFixed(2) }}</p>
-                    <div class="stock-info">
-                        <span>Stock disponible:</span>
-                        <strong :class="{ 'out-of-stock': (product.inventory?.stockAvailable ?? 0) === 0 }">
-                            {{ product.inventory?.stockAvailable ?? 0 }} Unidades
-                        </strong>
-                        <span v-if="(product.inventory?.stockReserved ?? 0) > 0" class="reserved-info">
-                            ({{ product.inventory?.stockReserved }} reservadas)
-                        </span>
-                    </div>
-                </div>
-
-                <div class="product-actions" v-if="product.inventory && product.inventory.stockAvailable > 0">
-                    <div class="quantity-selector">
-                        <label :for="'qty-' + product.id">Cant:</label>
-                        <input
-                            :id="'qty-' + product.id"
-                            type="number"
-                            v-model.number="quantities[product.id]"
-                            min="1"
-                            :max="product.inventory.stockAvailable"
-                            class="qty-input"
-                        />
-                    </div>
-                    <button
-                        @click="handleCreateOrder(product.id)"
-                        :disabled="orderStore.loading"
-                        class="btn-order"
-                    >
-                        {{ orderStore.loading ? 'Reservando...' : 'Comprar y Reservar' }}
-                    </button>
-                </div>
-                <div v-else class="sold-out-badge">Agotado Temporalmente</div>
-            </div>
+            <ProductCard
+                v-for="product in productStore.products"
+                :key="product.id"
+                :product="product"
+                :quantity="quantities[product.id] ?? 1"
+                :reserving="orderStore.loading"
+                @update:quantity="quantities[product.id] = $event"
+                @reserve="handleCreateOrder(product.id)"
+            />
         </div>
     </div>
 </template>
@@ -126,94 +135,6 @@ onMounted(() => {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.5rem;
-}
-.product-card {
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.product-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-}
-.product-info h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.15rem;
-    color: #2c3e50;
-}
-.description {
-    font-size: 0.85rem;
-    color: #7f8c8d;
-    margin-bottom: 1rem;
-    min-height: 2.5rem;
-}
-.price {
-    font-size: 1.3rem;
-    font-weight: bold;
-    color: #27ae60;
-    margin-bottom: 0.5rem;
-}
-.stock-info {
-    font-size: 0.85rem;
-    color: #34495e;
-    margin-bottom: 1rem;
-}
-.reserved-info {
-    font-size: 0.75rem;
-    color: #e67e22;
-    margin-left: 0.3rem;
-}
-.out-of-stock {
-    color: #c0392b;
-}
-.product-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    margin-top: 1rem;
-}
-.quantity-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.85rem;
-}
-.qty-input {
-    width: 55px;
-    padding: 0.35rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    text-align: center;
-}
-.btn-order {
-    flex: 1;
-    background: #3498db;
-    color: white;
-    border: none;
-    padding: 0.55rem;
-    border-radius: 4px;
-    font-weight: bold;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background 0.2s;
-}
-.btn-order:hover { background: #2980b9; }
-.btn-order:disabled { background: #bdc3c7; cursor: not-allowed; }
-.sold-out-badge {
-    text-align: center;
-    background: #fadbd8;
-    color: #c0392b;
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-weight: bold;
-    font-size: 0.85rem;
-    margin-top: 1rem;
 }
 .loading, .error-msg {
     text-align: center;
